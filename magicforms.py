@@ -1,4 +1,160 @@
-from Crypto.Cipher import ARC4
+__doc__ = """
+
+    ===============
+     magicforms.py
+    ===============
+
+    To use the magic forms, a secret key must be set in Django settings. It's
+    used as a salt when calculating the magic token for the form.
+
+    >>> from django.conf import settings
+    >>> settings.configure(SECRET_KEY='secret')
+
+    We'll use some tricks to fake the clock to an arbitrary time for testing
+    purposes.
+
+    >>> class FakeDateTime(datetime.datetime):
+    ...     now = staticmethod(lambda: datetime._fake_now)
+    >>> datetime.datetime = FakeDateTime
+
+    The magic token on the form is constructed by concatenating the current
+    time with a salted hash of the current time, remote IP address and unique
+    ID (UID) of the request.  The unique ID might be e.g. the primary key of
+    the blog post which is being commented on.
+
+    >>> correct_magic = sign('1991-10-05 18:53:00', '1.2.3.4', 16)
+    >>> correct_magic
+    'MTk5MS0xMC0wNSAxODo1MzowMOkIsSohfdvUDd3b0orRUO-2KN3s'
+
+    Let's use 1991-10-05 at 18:53:00 as the time the user loaded the form.
+
+    >>> when_loaded = datetime.datetime(1991, 10, 5, 18, 53, 0)
+    >>> datetime._fake_now = when_loaded
+
+    We'll use a mock class to act as a form object:
+
+    >>> class f:
+    ...     remote_ip = '1.2.3.4'
+    ...     unique_id = 16
+    ...     data = {}
+    ...     initial = {}
+
+    The ``set_initial_magic`` function sets the initial value of the form's
+    magic field according to current time, IP and UID.
+
+    >>> set_initial_magic(f)
+    >>> f.initial['magic'] == correct_magic
+    True
+
+    It won't set the initial value if it's already present in the form's data:
+
+    >>> f.data = {'magic': 'something'} ; f.initial = {}
+    >>> set_initial_magic(f)
+    >>> f.initial
+    {}
+
+    The following function tests the ``clean_magic()`` function with different
+    form data.  The default keyword argument values represent a correct
+    submission 60 seconds after loading the form.
+
+    >>> def test_clean(ip='1.2.3.4', uid=16, elapsed_secs=60, magic=correct_magic):
+    ...     class f:
+    ...         remote_ip = ip
+    ...         unique_id = uid
+    ...         cleaned_data = {'magic': magic}
+    ...     datetime._fake_now = when_loaded + datetime.timedelta(seconds=elapsed_secs)
+    ...     clean_magic(f)
+
+    A correct submission throws no exceptions.
+
+    >>> test_clean()
+
+    If the IP address or unique ID don't match, the user is notified about a
+    security violation.  This happens also if the security token has been
+    tampered with.
+
+    >>> test_clean(ip='1.2.3.5')
+    Traceback (most recent call last):
+    ValidationError: [u'Invalid security token']
+
+    >>> test_clean(uid=17)
+    Traceback (most recent call last):
+    ValidationError: [u'Invalid security token']
+
+    >>> test_clean(magic='wrong magic')
+    Traceback (most recent call last):
+    ValidationError: [u'Invalid security token']
+
+    >>> test_clean(magic=b64encode('wrong magic'))
+    Traceback (most recent call last):
+    ValidationError: [u'Invalid security token']
+
+    If the form is submitted less than five seconds after loading it, we have
+    reason to believe the submitter was a bot.  A submission after over one
+    hour is probably a result of a bot submitting the form it has saved
+    earlier.
+
+    >>> test_clean(elapsed_secs=2)
+    Traceback (most recent call last):
+    ValidationError: [u'Wait for another 3.00 seconds before submitting this form']
+
+    >>> test_clean(elapsed_secs=3660)
+    Traceback (most recent call last):
+    ValidationError: [u'This form has expired. Reload the page to get a new one']
+
+    To test the form class we'll reset the current time back to our chosen form
+    load timestamp.
+
+    >>> datetime._fake_now = when_loaded
+
+    The magic form includes hidden ``author_bogus_name`` and ``magic`` fields.
+
+    >>> f = MagicForm('1.2.3.4', 16)
+    >>> print f
+    <tr><th></th><td><input id="id_author_bogus_name" style="display:none" type="text" name="author_bogus_name" maxlength="0" /><input type="hidden" name="magic" value="MTk5MS0xMC0wNSAxODo1MzowMOkIsSohfdvUDd3b0orRUO-2KN3s" id="id_magic" /></td></tr>
+
+    The following function tests the form validation with different form data.
+    The default keyword argument values represent a correct submission 60
+    seconds after loading the form.
+
+    >>> def test_form(ip='1.2.3.4', uid=16, elapsed_secs=60, magic=correct_magic):
+    ...     datetime._fake_now = when_loaded + datetime.timedelta(seconds=elapsed_secs)
+    ...     f = MagicForm(ip, uid, data={'magic': magic})
+    ...     return f.is_valid(), f.errors
+
+    A correct submission validates correctly.
+
+    >>> test_form()
+    (True, {})
+
+    If the IP address or unique ID don't match, the user is notified about a
+    security violation.  This happens also if the security token has been
+    tampered with.
+
+    >>> test_form(ip='1.2.3.5')
+    (False, {'magic': [u'Invalid security token']})
+
+    >>> test_form(uid=17)
+    (False, {'magic': [u'Invalid security token']})
+
+    >>> test_form(magic='wrong magic')
+    (False, {'magic': [u'Invalid security token']})
+
+    >>> test_form(magic=b64encode('wrong magic'))
+    (False, {'magic': [u'Invalid security token']})
+
+    If the form is submitted less than five seconds after loading it, the form
+    is invalid and the user is notified.
+
+    >>> test_form(elapsed_secs=2)
+    (False, {'magic': [u'Wait for another 3.00 seconds before submitting this form']})
+
+    >>> test_form(elapsed_secs=3660)
+    (False, {'magic': [u'This form has expired. Reload the page to get a new one']})
+
+"""
+
+from hashlib import sha1
 import cPickle as pickle
 import datetime
 from base64 import urlsafe_b64encode as b64encode
@@ -15,59 +171,22 @@ from django.utils.translation import ugettext as _
 MIN_WAIT_SECONDS = 5
 MAX_WAIT_SECONDS = 3600
 
+def sign(timestamp, ip, uid):
+    data = pickle.dumps({'remote_ip': ip, 'unique_id': uid})
+    signature = sha1(timestamp + data + settings.SECRET_KEY).digest()
+    return b64encode(timestamp + signature)
+
 def clean_magic(self):
-    """
-    >>> correct_magic = 'xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS'
-    >>> when_loaded = datetime.datetime(1991, 10, 5, 18, 53, 0)
-
-    >>> def test_clean(ip, uid, elapsed_secs, magic):
-    ...     class f:
-    ...         remote_ip = ip
-    ...         unique_id = uid
-    ...         cleaned_data = {'magic': magic}
-    ...     datetime._fake_now = when_loaded + datetime.timedelta(seconds=elapsed_secs)
-    ...     clean_magic(f)
-
-    >>> test_clean('1.2.3.4', 16, 60, correct_magic)
-
-    >>> test_clean('1.2.3.4', 16, 2, correct_magic)
-    Traceback (most recent call last):
-    ValidationError: [u'Wait for another 3.00 seconds before submitting this form']
-
-    >>> test_clean('1.2.3.4', 16, 3660, correct_magic)
-    Traceback (most recent call last):
-    ValidationError: [u'This form has expired. Reload the page to get a new one']
-
-    >>> test_clean('1.2.3.5', 16, 60, correct_magic)
-    Traceback (most recent call last):
-    ValidationError: [u'Invalid security token']
-
-    >>> test_clean('1.2.3.4', 17, 60, correct_magic)
-    Traceback (most recent call last):
-    ValidationError: [u'Invalid security token']
-
-    >>> test_clean('1.2.3.4', 16, 60, 'wrong magic')
-    Traceback (most recent call last):
-    ValidationError: [u'Invalid security token']
-    """
     m = self.cleaned_data['magic']
-    arc4 = ARC4.new(settings.SECRET_KEY)
     try:
-        plain = arc4.decrypt(b64decode(str(m)))
-        data = pickle.loads(plain)
-        before = data['curtime']
-        remote_ip = data['remote_ip']
-        unique_id = data['unique_id']
-    except (TypeError, pickle.UnpicklingError, KeyError):
+        plain = b64decode(str(m))
+        when_loaded_str = plain[:19]
+        when_loaded = datetime.datetime.strptime(when_loaded_str, '%Y-%m-%d %H:%M:%S')
+        assert m == sign(when_loaded_str, self.remote_ip, self.unique_id)
+    except (TypeError, ValueError, AssertionError):
         raise forms.ValidationError(_('Invalid security token'))
 
-    if remote_ip != self.remote_ip or unique_id != self.unique_id:
-        raise forms.ValidationError(_('Invalid security token'))
-
-    try:
-        curdelta = datetime.datetime.now() - before
-    except TypeError:
-        raise forms.ValidationError(_('Invalid security token'))
+    curdelta = datetime.datetime.now() - when_loaded
 
     mindelta = datetime.timedelta(seconds=MIN_WAIT_SECONDS)
     if curdelta < mindelta:
@@ -80,59 +199,12 @@ def clean_magic(self):
     return m
 
 def set_initial_magic(self):
-    """
-    >>> class f:
-    ...     remote_ip = '1.2.3.4'
-    ...     unique_id = 16
-    ...     data = {}
-    ...     initial = {}
-    >>> datetime._fake_now = datetime.datetime(1991, 10, 5, 18, 53, 0)
-    >>> set_initial_magic(f)
-    >>> f.initial['magic']
-    'xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS'
-    """
     if not self.data.get('magic'):
-        arc4 = ARC4.new(settings.SECRET_KEY)
-        data = {
-            'curtime': datetime.datetime.now(),
-            'remote_ip': self.remote_ip,
-            'unique_id': self.unique_id,
-        }
-        plain = pickle.dumps(data)
-        self.initial['magic'] = b64encode(arc4.encrypt(plain))
+        curtime = str(datetime.datetime.now())
+        self.initial['magic'] = sign(curtime, self.remote_ip, self.unique_id)
+
 
 class MagicForm(forms.Form):
-    """
-    >>> datetime._fake_now = when_loaded = datetime.datetime(1991, 10, 5, 18, 53, 0)
-    >>> correct_magic = 'xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS'
-
-    >>> f = MagicForm('1.2.3.4', 16)
-    >>> print f
-    <tr><th></th><td><input id="id_author_bogus_name" style="display:none" type="text" name="author_bogus_name" maxlength="0" /><input type="hidden" name="magic" value="xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS" id="id_magic" /></td></tr>
-
-    >>> def test_form(remote_id, unique_id, elapsed_secs, magic):
-    ...     datetime._fake_now = when_loaded + datetime.timedelta(seconds=elapsed_secs)
-    ...     f = MagicForm(remote_id, unique_id, data={'magic': magic})
-    ...     return f.is_valid(), f.errors
-
-    >>> test_form('1.2.3.4', 16, 60, correct_magic)
-    (True, {})
-
-    >>> test_form('1.2.3.4', 16, 2, correct_magic)
-    (False, {'magic': [u'Wait for another 3.00 seconds before submitting this form']})
-
-    >>> test_form('1.2.3.4', 16, 3660, correct_magic)
-    (False, {'magic': [u'This form has expired. Reload the page to get a new one']})
-
-    >>> test_form('1.2.3.5', 16, 60, correct_magic)
-    (False, {'magic': [u'Invalid security token']})
-
-    >>> test_form('1.2.3.5', 17, 60, correct_magic)
-    (False, {'magic': [u'Invalid security token']})
-
-    >>> test_form('1.2.3.5', 16, 60, 'wrong magic')
-    (False, {'magic': [u'Invalid security token']})
-    """
     magic = forms.CharField(max_length=1024, widget=forms.HiddenInput())
     author_bogus_name = forms.CharField(required=False, max_length=0, label='', widget=forms.TextInput(attrs={ 'style': 'display:none'}))
 
@@ -159,13 +231,5 @@ class MagicModelForm(forms.ModelForm):
         return clean_magic(self)
 
 if __name__ == '__main__':
-    from django.conf import settings
-    settings.configure(SECRET_KEY='secret')
-
-    global _fake_now
-    class FakeDateTime(datetime.datetime):
-        now = staticmethod(lambda: datetime._fake_now)
-    datetime.datetime = FakeDateTime
-
     from doctest import testmod
     testmod()

@@ -9,8 +9,8 @@ type: :feature
 component: django-magicforms
 release: 
 reporter: akaihol+django@ambitone.com
-status: :unstarted
-disposition: 
+status: :closed
+disposition: :fixed
 creation_time: 2008-09-23 07:25:03.527049 Z
 references: []
 
@@ -20,3 +20,11 @@ log_events:
   - Antti Kaihola <akaihol+django@ambitone.com>
   - created
   - ""
+- - 2008-09-23 09:12:22.456079 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - changed status from unstarted to in_progress
+  - Dropping PyCrypto and using SHA1 from the standard library instead.
+- - 2008-09-23 11:39:31.116143 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - closed with disposition fixed
+  - Changed from ARC4 encryption to SHA1 salted hashes
