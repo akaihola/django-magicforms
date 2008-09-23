@@ -1,0 +1,28 @@
+--- !ditz.rubyforge.org,2008-03-06/issue 
+title: Add unit tests
+desc: |-
+  Before making modifications, I'd like to have unit tests to make sure
+  no regressions are introduced
+type: :feature
+component: django-magicforms
+release: 
+reporter: Antti Kaihola <akaihol+django@ambitone.com>
+status: :closed
+disposition: :fixed
+creation_time: 2008-09-23 07:40:40.544158 Z
+references: []
+
+id: 2e0551d6a2008dfa284480d08b8a518104f47fc2
+log_events: 
+- - 2008-09-23 07:40:44.615864 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - created
+  - ""
+- - 2008-09-23 07:48:20.681802 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - changed status from unstarted to in_progress
+  - Going to create unit tests
+- - 2008-09-23 09:08:33.958495 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - closed with disposition fixed
+  - Wrote unit tests
