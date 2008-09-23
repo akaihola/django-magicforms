@@ -1,0 +1,162 @@
+This is a fork of fíam's magicforms.py originally announced on
+2008-05-13.
+
+The reason for the fork is I needed a couple of slight modifications
+in the code.
+
+-- Antti Kaihola <akaihol+django@ambitone.com>
+
+
+Here is fíam's original blog entry with comments as of 2008-09-23:
+
+      http://fi.am/entry/preventing-spam/
+
+      Preventing Spam
+
+      Latelly I've been hammered with a lot of spam in this blog, so I
+      decided to implement something to prevent it.
+
+      As I've previously mentioned, I don't like Akismet because it's
+      too simple. It only tells you if they think the comment is spam,
+      so the best you can do is skip writing comments to the
+      database. It would be nice if it returned a probability, so you
+      could act accordingly. For example, consider the following:
+
+          o If spam probability is 50% or below, accept the comment.
+
+          o If it's between 50% and 80%, present some validation
+            method to the user. It could be a CAPTCHA or even
+            something more simple like a message telling the user to
+            resubmit the form before 30 seconds, since most of the
+            spam bots wouldn't get that right.
+
+          o If it's more than 80%, discard the comment.
+
+      But Akismet can't do that, so I will never use it. My initial
+      idea was implementing my own spam detection system but, since
+      developing ffloat.it keeps me busy enough, that's not something
+      I can do for now. However, after reading the suggestion from
+      Scott Lawton and reading the page he mentioned, I found I could
+      write something to prevent most of the spam in less than an
+      hour.
+
+      My approach uses two form classes, which you must subclass in
+      your application. And that's all you need! Your forms won't even
+      have any visual impact, since those two classes only introduce
+      two hidden fields and the correspondant validation methods. The
+      process is a follows:
+
+          o When you create the form (empty or with data) you need to
+            pass two new variables to it: the remote address which is
+            requesting the page and an identifier. For example, in
+            Blango I use the primary key for the entry.  
+
+	  o The form encrypts the requester IP, the identifier and the
+ 	    current time using a stream crypher and your
+ 	    settings.SECRET_KEY as key and puts it in a hidden field.
+
+          o The form adds a textfield (author_bogus_name) with a
+            maximum length of 0 without label and with style set to
+            display:none. Users won't see it, but spam bots will try
+            to put something there.
+
+          o Upon form verification, the hidden field is decyphered and
+            the requester address and the identifier are checked for
+            equality. If they match, a time verification is performed:
+            if the user took less than 5 seconds for posting it (wow,
+            too fast typing, isn't it?) or more than an hour
+            (preventing bots for reusing the token in the future), the
+            form won't validate.
+
+      I know this method is not perfect, since a spambot could be
+      instructed to circunvent it. But the game consists on being
+      ahead of the spammers, and currently this technique will get you
+      there.
+
+      As for the code, it's currently commited to the Blango tree, in
+      the file magicforms.py, but for your convenience I've made it
+      avaible here. Let's see an example from Blango itself:
+
+      Before:
+
+      class CommentForm(forms.ModelForm):
+      ...
+      ...
+      comment_form = CommentForm()
+      if request.method == 'POST' and entry.allow_comments:
+          comment_form = CommentForm(request.POST)
+
+      After:
+
+      from magicforms import MagicModelForm
+      class CommentForm(MagicModelForm):
+      ...
+      ...
+      comment_form = CommentForm(request.META['REMOTE_ADDR'], entry.id)
+      if request.method == 'POST' and entry.allow_comments:
+          comment_form = CommentForm(request.META['REMOTE_ADDR'], entry.id, request.POST)
+
+      Just remember to use MagicForm if your form inherits from
+      forms.Form and MagicModelForm if your forms inherits from
+      forms.ModelForm. Note also that this code depends on PyCrypto
+      (python-crypto package in Debian and friends).
+
+
+      Comments
+
+      #1 by Simon 2008-05-13
+
+      I like the idea of having a field that is hidden with css. I
+      think that will trip most spambots especially if you apply the
+      css to a surrounding element rather then the input field itself.
+
+      It would be good to note that validating the REMOTE_ADDR could
+      cause problems for some users. I believe that AOL users could
+      have a different IP address on subsequent requests. Maybe a way
+      around this would be to use the first two octets. Even without
+      the REMOTE_ADDR element this method would work well.
+
+      #2 by Nick 2008-05-13
+
+      Firefox will try to autofill it (hidden field too I think) and
+      fail. So it's not so good idea.
+
+      Another idea is to add to every field name unique id - md5 hash
+      of secret key+time+data. You will need to rewrite form class to
+      support this.
+
+      So every time every field would have new name which makes bots
+      pre-collection of field names meaningless.
+
+      #3 by Simon 2008-05-14
+
+      It could be that Firefox doesn't send the field in the post
+      data. I believe that the rfc (not sure which one anymore) says
+      that it is up to the browser if it wants to send it or not. Not
+      sure what spambots would do it it was filled with predetermined
+      data. As it's not a hidden filed I suspect they would fill it
+      with junk.
+
+      #4 by Simon 2008-05-14
+
+      Or Firefox is filling it with a password you have stored for the
+      website.
+
+      #5 by fiam 2008-05-22
+
+      @Simon, @Nick
+
+      Thanks for your comments. As far as I know, Firefox will try to
+      fill the field only if it has recorded a value for a field with
+      the same DOM id. DOM id for the hidden field in MagicForms is
+      set to bogus_author_name, which IMHO is not a commonly used
+      id. However, I like your idea about setting a random field id
+      and I'll be implementing it.
+
+      #6 by Antti Kaihola 2008-09-23
+
+      Is there a particular reason why you're using ARC4 encryption
+      instead of a salted MD5 or SHA1 hash?
+
+      MD5 and SHA1 are available in the Python standard library, so
+      the dependency on the PyCrypto library could be dropped.
