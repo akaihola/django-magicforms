@@ -1,0 +1,22 @@
+--- !ditz.rubyforge.org,2008-03-06/issue 
+title: Use standard library hash libraries instead of PyCrypt
+desc: |-
+  The ARC4 encryption algorithm requires the external PyCrypto
+  library. If a salted MD5 or SHA1 hash was used instead, that
+  dependency could be dropped since MD5 and SHA1 are available in the
+  Python standard library.
+type: :feature
+component: django-magicforms
+release: 
+reporter: akaihol+django@ambitone.com
+status: :unstarted
+disposition: 
+creation_time: 2008-09-23 07:25:03.527049 Z
+references: []
+
+id: 4905e8799764d89b5b0f2268911bbceb05f3a509
+log_events: 
+- - 2008-09-23 07:25:12.267867 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - created
+  - ""
