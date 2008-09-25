@@ -1,0 +1,26 @@
+--- !ditz.rubyforge.org,2008-03-06/issue 
+title: Form prefix breaks MagicForm
+desc: The magic forms don't work if a form prefix is defined
+type: :bugfix
+component: django-magicforms
+release: 
+reporter: Antti Kaihola <akaihol+django@ambitone.com>
+status: :closed
+disposition: :fixed
+creation_time: 2008-09-25 11:22:06.816799 Z
+references: []
+
+id: 2cba832a4bca097fb5d9b2b8f2e7beb4b2b497aa
+log_events: 
+- - 2008-09-25 10:22:10.731925 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - created
+  - ""
+- - 2008-09-25 10:22:33.411975 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - changed status from unstarted to in_progress
+  - ""
+- - 2008-09-25 11:24:16.891599 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - closed with disposition fixed
+  - Now supports form prefixes

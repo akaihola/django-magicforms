@@ -79,7 +79,7 @@ def clean_magic(self):
 
     return m
 
-def set_initial_magic(self):
+def set_initial_magic(self, init_kwargs):
     """
     >>> class f:
     ...     remote_ip = '1.2.3.4'
@@ -87,11 +87,12 @@ def set_initial_magic(self):
     ...     data = {}
     ...     initial = {}
     >>> datetime._fake_now = datetime.datetime(1991, 10, 5, 18, 53, 0)
-    >>> set_initial_magic(f)
-    >>> f.initial['magic']
+    >>> kwargs = {}
+    >>> set_initial_magic(f, kwargs)
+    >>> kwargs['initial']['magic']
     'xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS'
     """
-    if not self.data.get('magic'):
+    if 'data' not in init_kwargs or not init_kwargs['data'].get('magic'):
         arc4 = ARC4.new(settings.SECRET_KEY)
         data = {
             'curtime': datetime.datetime.now(),
@@ -99,48 +100,50 @@ def set_initial_magic(self):
             'unique_id': self.unique_id,
         }
         plain = pickle.dumps(data)
-        self.initial['magic'] = b64encode(arc4.encrypt(plain))
+        encoded = b64encode(arc4.encrypt(plain))
+        init_kwargs.setdefault('initial', {})['magic'] = encoded
 
 class MagicForm(forms.Form):
     """
     >>> datetime._fake_now = when_loaded = datetime.datetime(1991, 10, 5, 18, 53, 0)
     >>> correct_magic = 'xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS'
 
-    >>> f = MagicForm('1.2.3.4', 16)
+    >>> f = MagicForm('1.2.3.4', 16, prefix='test')
     >>> print f
-    <tr><th></th><td><input id="id_author_bogus_name" style="display:none" type="text" name="author_bogus_name" maxlength="0" /><input type="hidden" name="magic" value="xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS" id="id_magic" /></td></tr>
+    <tr><th></th><td><input id="id_test-author_bogus_name" style="display:none" type="text" name="test-author_bogus_name" maxlength="0" /><input type="hidden" name="test-magic" value="xVKiLYj38dNcosqplrmcU4o9AtCJuvVqeg8nwLkfJ2vWlHqkzDMd0SmOkLWky0Pn_B_58OTAOp0xq5VJdYkqfO9-umnQd3KgO7iPWl6psSVxK0PGfCEbQKsgq22Zd55jKFt99ItWj592F_Ba1hHaIyRgMJDNi292KwxcSA8qAwNWjqFuPlCLx1STft6BWciS" id="id_test-magic" /></td></tr>
 
-    >>> def test_form(remote_ip, unique_id, elapsed_secs, magic):
+    >>> def test_form(remote_ip, unique_id, elapsed_secs, magic, prefix=None):
     ...     datetime._fake_now = when_loaded + datetime.timedelta(seconds=elapsed_secs)
-    ...     f = MagicForm(remote_ip, unique_id, data={'magic': magic})
+    ...     fieldname = prefix and ('%s-magic' % prefix) or 'magic'
+    ...     f = MagicForm(remote_ip, unique_id, data={fieldname: magic}, prefix=prefix)
     ...     return f.is_valid(), f.errors
 
     >>> test_form('1.2.3.4', 16, 60, correct_magic)
     (True, {})
 
-    >>> test_form('1.2.3.4', 16, 2, correct_magic)
+    >>> test_form('1.2.3.4', 16, 2, correct_magic, prefix='test')
     (False, {'magic': [u'Wait for another 3.00 seconds before submitting this form']})
 
     >>> test_form('1.2.3.4', 16, 3660, correct_magic)
     (False, {'magic': [u'This form has expired. Reload the page to get a new one']})
 
-    >>> test_form('1.2.3.5', 16, 60, correct_magic)
+    >>> test_form('1.2.3.5', 16, 60, correct_magic, prefix='test')
     (False, {'magic': [u'Invalid security token']})
 
     >>> test_form('1.2.3.5', 17, 60, correct_magic)
     (False, {'magic': [u'Invalid security token']})
 
-    >>> test_form('1.2.3.5', 16, 60, 'wrong magic')
+    >>> test_form('1.2.3.5', 16, 60, 'wrong magic', prefix='test')
     (False, {'magic': [u'Invalid security token']})
     """
     magic = forms.CharField(max_length=1024, widget=forms.HiddenInput())
     author_bogus_name = forms.CharField(required=False, max_length=0, label='', widget=forms.TextInput(attrs={ 'style': 'display:none'}))
 
     def __init__(self, remote_ip, unique_id, *args, **kwargs):
-        super(MagicForm, self).__init__(*args, **kwargs)
         self.remote_ip = remote_ip
         self.unique_id = unique_id
-        set_initial_magic(self)
+        set_initial_magic(self, kwargs)
+        super(MagicForm, self).__init__(*args, **kwargs)
 
     def clean_magic(self):
         return clean_magic(self)
@@ -150,10 +153,10 @@ class MagicModelForm(forms.ModelForm):
     author_bogus_name = forms.CharField(required=False, max_length=0, label='', widget=forms.TextInput(attrs={ 'style': 'display:none'}))
 
     def __init__(self, remote_ip, unique_id, *args, **kwargs):
-        super(MagicModelForm, self).__init__(*args, **kwargs)
         self.remote_ip = remote_ip
         self.unique_id = unique_id
-        set_initial_magic(self)
+        set_initial_magic(self, kwargs)
+        super(MagicModelForm, self).__init__(*args, **kwargs)
 
     def clean_magic(self):
         return clean_magic(self)
@@ -162,9 +165,10 @@ if __name__ == '__main__':
     from django.conf import settings
     settings.configure(SECRET_KEY='secret')
 
-    global _fake_now
     class FakeDateTime(datetime.datetime):
         now = staticmethod(lambda: datetime._fake_now)
+        def __add__(self, other):
+            return datetime.datetime(*super(FakeDateTime, self).__add__(other).timetuple()[:7])
     datetime.datetime = FakeDateTime
 
     from doctest import testmod
