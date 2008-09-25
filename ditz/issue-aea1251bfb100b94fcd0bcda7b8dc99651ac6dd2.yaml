@@ -19,8 +19,8 @@ type: :bugfix
 component: django-magicforms
 release: 
 reporter: Antti Kaihola <akaihol+django@ambitone.com>
-status: :in_progress
-disposition: 
+status: :closed
+disposition: :fixed
 creation_time: 2008-09-25 07:17:15.053548 Z
 references: []
 
@@ -42,3 +42,7 @@ log_events:
   - Antti Kaihola <akaihol+django@ambitone.com>
   - changed status from unstarted to in_progress
   - Changing from cPickle to unicode() for unique_id serialization.
+- - 2008-09-25 07:47:54.100245 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - closed with disposition fixed
+  - Now uses unicode() instead of cPickle.dumps()

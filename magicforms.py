@@ -20,11 +20,12 @@ __doc__ = """
     The magic token on the form is constructed by concatenating the current
     time with a salted hash of the current time, remote IP address and unique
     ID (UID) of the request.  The unique ID might be e.g. the primary key of
-    the blog post which is being commented on.
+    the blog post which is being commented on.  The only requirement is that
+    the ``unicode()`` function must be able to convert it consistently.
 
     >>> correct_magic = sign('1991-10-05 18:53:00', '1.2.3.4', 16)
     >>> correct_magic
-    'MTk5MS0xMC0wNSAxODo1MzowMOkIsSohfdvUDd3b0orRUO-2KN3s'
+    'MTk5MS0xMC0wNSAxODo1MzowMCULddvWZgcAHcac0gvUeMZJgDaC'
 
     Let's use 1991-10-05 at 18:53:00 as the time the user loaded the form.
 
@@ -111,7 +112,7 @@ __doc__ = """
 
     >>> f = MagicForm('1.2.3.4', 16)
     >>> print f
-    <tr><th></th><td><input id="id_author_bogus_name" style="display:none" type="text" name="author_bogus_name" maxlength="0" /><input type="hidden" name="magic" value="MTk5MS0xMC0wNSAxODo1MzowMOkIsSohfdvUDd3b0orRUO-2KN3s" id="id_magic" /></td></tr>
+    <tr><th></th><td><input id="id_author_bogus_name" style="display:none" type="text" name="author_bogus_name" maxlength="0" /><input type="hidden" name="magic" value="MTk5MS0xMC0wNSAxODo1MzowMCULddvWZgcAHcac0gvUeMZJgDaC" id="id_magic" /></td></tr>
 
     The following function tests the form validation with different form data.
     The default keyword argument values represent a correct submission 60
@@ -155,7 +156,6 @@ __doc__ = """
 """
 
 from hashlib import sha1
-import cPickle as pickle
 import datetime
 from base64 import urlsafe_b64encode as b64encode
 from base64 import urlsafe_b64decode as b64decode
@@ -172,8 +172,8 @@ MIN_WAIT_SECONDS = 5
 MAX_WAIT_SECONDS = 3600
 
 def sign(timestamp, ip, uid):
-    data = pickle.dumps({'remote_ip': ip, 'unique_id': uid})
-    signature = sha1(timestamp + data + settings.SECRET_KEY).digest()
+    plain = '$'.join((timestamp, ip, unicode(uid), settings.SECRET_KEY))
+    signature = sha1(plain).digest()
     return b64encode(timestamp + signature)
 
 def clean_magic(self):

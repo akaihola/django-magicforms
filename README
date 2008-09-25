@@ -7,7 +7,7 @@ in the code.
 -- Antti Kaihola <akaihol+django@ambitone.com>
 
 
-Here is fíam's original blog entry with comments as of 2008-09-23:
+Here is fíam's original blog entry with comments as of 2008-09-25:
 
       http://fi.am/entry/preventing-spam/
 
@@ -160,3 +160,21 @@ Here is fíam's original blog entry with comments as of 2008-09-23:
 
       MD5 and SHA1 are available in the Python standard library, so
       the dependency on the PyCrypto library could be dropped.
+
+      #7 by Antti Kaihola 2008-09-23
+
+      Ah, now I see it. You're encrypting the timestamp as well, so a
+      hash function won't work here since it has to be decrypted. An
+      alternative would be to use the timestamp unencrypted and
+      include its own salted hash to detect tampering.
+
+      #8 by Antti Kaihola 2008-09-23
+
+      Here's a version using salted SHA1 instead of ARC4:
+
+      http://github.com/akaihola/django-magicforms/commits/ditch-pycrypto
+
+      #9 by Antti Kaihola 2008-09-25
+
+      While hacking on magicforms I noticed that using cPickle is
+      unreliable. See for instance http://dpaste.com/hold/80421/
