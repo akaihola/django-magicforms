@@ -23,13 +23,13 @@ __doc__ = """
     the blog post which is being commented on.  The only requirement is that
     the ``unicode()`` function must be able to convert it consistently.
 
-    >>> correct_magic = sign('1991-10-05 18:53:00', '1.2.3.4', 16)
+    >>> correct_magic = sign('1991-10-05 18:53:00.12345', '1.2.3.4', 16)
     >>> correct_magic
     'MTk5MS0xMC0wNSAxODo1MzowMCULddvWZgcAHcac0gvUeMZJgDaC'
 
     Let's use 1991-10-05 at 18:53:00 as the time the user loaded the form.
 
-    >>> when_loaded = datetime.datetime(1991, 10, 5, 18, 53, 0)
+    >>> when_loaded = datetime.datetime(1991, 10, 5, 18, 53, 0, 12345)
     >>> datetime._fake_now = when_loaded
 
     We'll use a mock class to act as a form object:
@@ -97,7 +97,7 @@ __doc__ = """
 
     >>> test_clean(elapsed_secs=2)
     Traceback (most recent call last):
-    ValidationError: [u'Wait for another 3.00 seconds before submitting this form']
+    ValidationError: [u'Wait for another 2.99 seconds before submitting this form']
 
     >>> test_clean(elapsed_secs=3660)
     Traceback (most recent call last):
@@ -148,7 +148,7 @@ __doc__ = """
     is invalid and the user is notified.
 
     >>> test_form(elapsed_secs=2)
-    (False, {'magic': [u'Wait for another 3.00 seconds before submitting this form']})
+    (False, {'magic': [u'Wait for another 2.99 seconds before submitting this form']})
 
     >>> test_form(elapsed_secs=3660)
     (False, {'magic': [u'This form has expired. Reload the page to get a new one']})
@@ -172,9 +172,9 @@ MIN_WAIT_SECONDS = 5
 MAX_WAIT_SECONDS = 3600
 
 def sign(timestamp, ip, uid):
-    plain = '$'.join((timestamp, ip, unicode(uid), settings.SECRET_KEY))
+    plain = '$'.join((timestamp[:19], ip, unicode(uid), settings.SECRET_KEY))
     signature = sha1(plain).digest()
-    return b64encode(timestamp + signature)
+    return b64encode(timestamp[:19] + signature)
 
 def clean_magic(self):
     m = self.cleaned_data['magic']
