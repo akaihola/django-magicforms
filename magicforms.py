@@ -15,6 +15,8 @@ __doc__ = """
 
     >>> class FakeDateTime(datetime.datetime):
     ...     now = staticmethod(lambda: datetime._fake_now)
+    ...     def __add__(self, other):
+    ...         return datetime.datetime(*super(FakeDateTime, self).__add__(other).timetuple()[:7])
     >>> datetime.datetime = FakeDateTime
 
     The magic token on the form is constructed by concatenating the current
@@ -43,16 +45,17 @@ __doc__ = """
     The ``set_initial_magic`` function sets the initial value of the form's
     magic field according to current time, IP and UID.
 
-    >>> set_initial_magic(f)
-    >>> f.initial['magic'] == correct_magic
+    >>> kwargs = {}
+    >>> set_initial_magic(f, kwargs)
+    >>> kwargs['initial']['magic'] == correct_magic
     True
 
     It won't set the initial value if it's already present in the form's data:
 
-    >>> f.data = {'magic': 'something'} ; f.initial = {}
-    >>> set_initial_magic(f)
-    >>> f.initial
-    {}
+    >>> kwargs = {'data': {'magic': 'something'}}
+    >>> set_initial_magic(f, kwargs)
+    >>> 'initial' in kwargs
+    False
 
     The following function tests the ``clean_magic()`` function with different
     form data.  The default keyword argument values represent a correct
@@ -97,7 +100,7 @@ __doc__ = """
 
     >>> test_clean(elapsed_secs=2)
     Traceback (most recent call last):
-    ValidationError: [u'Wait for another 2.99 seconds before submitting this form']
+    ValidationError: [u'Wait for another 3.00 seconds before submitting this form']
 
     >>> test_clean(elapsed_secs=3660)
     Traceback (most recent call last):
@@ -106,21 +109,20 @@ __doc__ = """
     To test the form class we'll reset the current time back to our chosen form
     load timestamp.
 
-    >>> datetime._fake_now = when_loaded
-
     The magic form includes hidden ``author_bogus_name`` and ``magic`` fields.
 
-    >>> f = MagicForm('1.2.3.4', 16)
+    >>> f = MagicForm('1.2.3.4', 16, prefix='test')
     >>> print f
-    <tr><th></th><td><input id="id_author_bogus_name" style="display:none" type="text" name="author_bogus_name" maxlength="0" /><input type="hidden" name="magic" value="MTk5MS0xMC0wNSAxODo1MzowMCULddvWZgcAHcac0gvUeMZJgDaC" id="id_magic" /></td></tr>
+    <tr><th></th><td><input id="id_test-author_bogus_name" style="display:none" type="text" name="test-author_bogus_name" maxlength="0" /><input type="hidden" name="test-magic" value="MTk5MS0xMC0wNSAxOTo1NDowMAWzWwKxP75-QiCg5pyatB5HOAyg" id="id_test-magic" /></td></tr>
 
     The following function tests the form validation with different form data.
     The default keyword argument values represent a correct submission 60
     seconds after loading the form.
 
-    >>> def test_form(ip='1.2.3.4', uid=16, elapsed_secs=60, magic=correct_magic):
+    >>> def test_form(ip='1.2.3.4', uid=16, elapsed_secs=60, magic=correct_magic, prefix=None):
     ...     datetime._fake_now = when_loaded + datetime.timedelta(seconds=elapsed_secs)
-    ...     f = MagicForm(ip, uid, data={'magic': magic})
+    ...     fieldname = prefix and ('%s-magic' % prefix) or 'magic'
+    ...     f = MagicForm(ip, uid, data={fieldname: magic}, prefix=prefix)
     ...     return f.is_valid(), f.errors
 
     A correct submission validates correctly.
@@ -135,20 +137,20 @@ __doc__ = """
     >>> test_form(ip='1.2.3.5')
     (False, {'magic': [u'Invalid security token']})
 
-    >>> test_form(uid=17)
+    >>> test_form(uid=17, prefix='test')
     (False, {'magic': [u'Invalid security token']})
 
     >>> test_form(magic='wrong magic')
     (False, {'magic': [u'Invalid security token']})
 
-    >>> test_form(magic=b64encode('wrong magic'))
+    >>> test_form(magic=b64encode('wrong magic'), prefix='test')
     (False, {'magic': [u'Invalid security token']})
 
     If the form is submitted less than five seconds after loading it, the form
     is invalid and the user is notified.
 
-    >>> test_form(elapsed_secs=2)
-    (False, {'magic': [u'Wait for another 2.99 seconds before submitting this form']})
+    >>> test_form(elapsed_secs=2, prefix='test')
+    (False, {'magic': [u'Wait for another 3.00 seconds before submitting this form']})
 
     >>> test_form(elapsed_secs=3660)
     (False, {'magic': [u'This form has expired. Reload the page to get a new one']})
@@ -198,21 +200,21 @@ def clean_magic(self):
 
     return m
 
-def set_initial_magic(self):
-    if not self.data.get('magic'):
+def set_initial_magic(self, init_kwargs):
+    if 'data' not in init_kwargs or not init_kwargs['data'].get('magic'):
         curtime = str(datetime.datetime.now())
-        self.initial['magic'] = sign(curtime, self.remote_ip, self.unique_id)
-
+        magic = sign(curtime, self.remote_ip, self.unique_id)
+        init_kwargs.setdefault('initial', {})['magic'] = magic
 
 class MagicForm(forms.Form):
     magic = forms.CharField(max_length=1024, widget=forms.HiddenInput())
     author_bogus_name = forms.CharField(required=False, max_length=0, label='', widget=forms.TextInput(attrs={ 'style': 'display:none'}))
 
     def __init__(self, remote_ip, unique_id, *args, **kwargs):
-        super(MagicForm, self).__init__(*args, **kwargs)
         self.remote_ip = remote_ip
         self.unique_id = unique_id
-        set_initial_magic(self)
+        set_initial_magic(self, kwargs)
+        super(MagicForm, self).__init__(*args, **kwargs)
 
     def clean_magic(self):
         return clean_magic(self)
@@ -222,10 +224,10 @@ class MagicModelForm(forms.ModelForm):
     author_bogus_name = forms.CharField(required=False, max_length=0, label='', widget=forms.TextInput(attrs={ 'style': 'display:none'}))
 
     def __init__(self, remote_ip, unique_id, *args, **kwargs):
-        super(MagicModelForm, self).__init__(*args, **kwargs)
         self.remote_ip = remote_ip
         self.unique_id = unique_id
-        set_initial_magic(self)
+        set_initial_magic(self, kwargs)
+        super(MagicModelForm, self).__init__(*args, **kwargs)
 
     def clean_magic(self):
         return clean_magic(self)
