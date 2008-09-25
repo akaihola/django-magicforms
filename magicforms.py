@@ -39,18 +39,19 @@ __doc__ = """
     >>> class f:
     ...     remote_ip = '1.2.3.4'
     ...     unique_id = 16
-    ...     data = {}
-    ...     initial = {}
 
-    The ``set_initial_magic`` function sets the initial value of the form's
-    magic field according to current time, IP and UID.
+    The ``set_initial_magic`` function provides calculates the initial value
+    for the form's magic field according to current time, IP and UID.
+    Overridden ``__init__`` methods use the modified keyword arguments to call
+    the ``__init__`` of the superclass.
 
     >>> kwargs = {}
     >>> set_initial_magic(f, kwargs)
     >>> kwargs['initial']['magic'] == correct_magic
     True
 
-    It won't set the initial value if it's already present in the form's data:
+    The initial value won't be set if the ``magic`` field is already present in
+    the form's data:
 
     >>> kwargs = {'data': {'magic': 'something'}}
     >>> set_initial_magic(f, kwargs)
