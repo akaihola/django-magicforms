@@ -1,0 +1,44 @@
+--- !ditz.rubyforge.org,2008-03-06/issue 
+title: cPickle unreliable
+desc: |-
+  Using cPickle to convert the unique id into a string is unreliable.
+  Here is an example script demonstrating that:
+  
+    import cPickle
+    print "cPickle.dumps() for"
+    print " (unicode(1),) == %r" % cPickle.dumps(( unicode(1), ))
+    print " (u'1',)       == %r" % cPickle.dumps(( u'1', ))
+    # Result when running as a script:
+    # cPickle.dumps() for
+    #  (unicode(1),) == '(V1\nt.'
+    #  (u'1',)       == '(V1\ntp1\n.'
+  
+    # Strangely, if the above statements are run in an interactive
+    # session, the pickled string is '(V1\np0\ntp1\n.' in both cases.
+type: :bugfix
+component: django-magicforms
+release: 
+reporter: Antti Kaihola <akaihol+django@ambitone.com>
+status: :in_progress
+disposition: 
+creation_time: 2008-09-25 07:17:15.053548 Z
+references: []
+
+id: aea1251bfb100b94fcd0bcda7b8dc99651ac6dd2
+log_events: 
+- - 2008-09-25 07:19:11.023990 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - created
+  - |-
+    The easiest solution is to specify that unique_id be consistently and
+    uniquely convertable to a unicode string with the unicode() function
+    instead of picklable.
+    
+    I asked about cPickle on the freenode #python channel, and was advised
+    that pickling can't in fact be relied on to always produce identical
+    strings. It's just guaranteed to produce strings which unpickle back
+    to the same data.
+- - 2008-09-25 07:20:30.084231 Z
+  - Antti Kaihola <akaihol+django@ambitone.com>
+  - changed status from unstarted to in_progress
+  - Changing from cPickle to unicode() for unique_id serialization.
