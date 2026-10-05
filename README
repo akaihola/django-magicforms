@@ -1,3 +1,21 @@
+Status: unmaintained since 2008
+===============================
+
+This code targets Python 2 and Django 1.0. It is kept for reference
+only; don't use it in new projects. Django's ``django.core.signing``
+module now provides signed, timestamped tokens out of the box.
+
+Security note: until 2026-10-05, ``magicforms.py`` on the ``master``
+branch decrypted the hidden ``magic`` form field and passed the
+result to ``cPickle.loads()``. The ARC4 token had no integrity
+check, so a visitor could tamper with what got unpickled, which can
+lead to remote code execution. If you copied that version, or
+fíam's original, into a project, remove it. The current version
+(merged from the ``ditch-pycrypto`` branch, written in September
+2008) never unpickles input; it signs a plain timestamp with a
+salted SHA1 hash instead.
+
+
 This is a fork of fíam's magicforms.py originally announced on
 2008-05-13.
 
