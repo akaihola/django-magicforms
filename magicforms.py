@@ -4,8 +4,8 @@ __doc__ = """
      magicforms.py
     ===============
 
-    To use the magic forms, a secret key must be set in Django settings. It's
-    used as a salt when calculating the magic token for the form.
+    To use the magic forms, a secret key must be set in Django settings. The
+    key for signing the magic token on the form is derived from it.
 
     >>> from django.conf import settings
     >>> settings.configure(SECRET_KEY='secret')
@@ -20,14 +20,15 @@ __doc__ = """
     >>> datetime.datetime = FakeDateTime
 
     The magic token on the form is constructed by concatenating the current
-    time with a salted hash of the current time, remote IP address and unique
-    ID (UID) of the request.  The unique ID might be e.g. the primary key of
-    the blog post which is being commented on.  The only requirement is that
-    the ``unicode()`` function must be able to convert it consistently.
+    time with an HMAC-SHA256 signature of the current time, remote IP address
+    and unique ID (UID) of the request.  The unique ID might be e.g. the
+    primary key of the blog post which is being commented on.  The only
+    requirement is that the ``unicode()`` function must be able to convert it
+    consistently.
 
     >>> correct_magic = sign('1991-10-05 18:53:00.12345', '1.2.3.4', 16)
     >>> correct_magic
-    'MTk5MS0xMC0wNSAxODo1MzowMCULddvWZgcAHcac0gvUeMZJgDaC'
+    'MTk5MS0xMC0wNSAxODo1MzowMHXTDeqWfG9d3ge5K9r814BKBGmL80r9GAWPuft0Bit_'
 
     Let's use 1991-10-05 at 18:53:00 as the time the user loaded the form.
 
@@ -114,7 +115,7 @@ __doc__ = """
 
     >>> f = MagicForm('1.2.3.4', 16, prefix='test')
     >>> print f
-    <tr><th></th><td><input id="id_test-author_bogus_name" style="display:none" type="text" name="test-author_bogus_name" maxlength="0" /><input type="hidden" name="test-magic" value="MTk5MS0xMC0wNSAxOTo1NDowMAWzWwKxP75-QiCg5pyatB5HOAyg" id="id_test-magic" /></td></tr>
+    <tr><th></th><td><input id="id_test-author_bogus_name" style="display:none" type="text" name="test-author_bogus_name" maxlength="0" /><input type="hidden" name="test-magic" value="MTk5MS0xMC0wNSAxOTo1NDowMMNuSyATKk-wyY4dLwAwxQkSR-66O2Y7wN1tCl9h27ew" id="id_test-magic" /></td></tr>
 
     The following function tests the form validation with different form data.
     The default keyword argument values represent a correct submission 60
@@ -158,7 +159,8 @@ __doc__ = """
 
 """
 
-from hashlib import sha1
+from hashlib import sha256
+import hmac
 import datetime
 from base64 import urlsafe_b64encode as b64encode
 from base64 import urlsafe_b64decode as b64decode
@@ -174,9 +176,20 @@ from django.utils.translation import ugettext as _
 MIN_WAIT_SECONDS = 5
 MAX_WAIT_SECONDS = 3600
 
+def constant_time_compare(val1, val2):
+    # The time taken doesn't depend on how many leading characters match, so
+    # response times don't reveal how close a forged token is.
+    if len(val1) != len(val2):
+        return False
+    result = 0
+    for x, y in zip(val1, val2):
+        result |= ord(x) ^ ord(y)
+    return result == 0
+
 def sign(timestamp, ip, uid):
-    plain = '$'.join((timestamp[:19], ip, unicode(uid), settings.SECRET_KEY))
-    signature = sha1(plain).digest()
+    key = sha256('django-magicforms' + settings.SECRET_KEY).digest()
+    plain = u'$'.join((timestamp[:19], ip, unicode(uid))).encode('utf-8')
+    signature = hmac.new(key, plain, sha256).digest()
     return b64encode(timestamp[:19] + signature)
 
 def clean_magic(self):
@@ -185,8 +198,11 @@ def clean_magic(self):
         plain = b64decode(str(m))
         when_loaded_str = plain[:19]
         when_loaded = datetime.datetime.strptime(when_loaded_str, '%Y-%m-%d %H:%M:%S')
-        assert m == sign(when_loaded_str, self.remote_ip, self.unique_id)
-    except (TypeError, ValueError, AssertionError):
+    except (TypeError, ValueError):
+        raise forms.ValidationError(_('Invalid security token'))
+
+    # Not an assert: ``python -O`` strips asserts and would skip this check.
+    if not constant_time_compare(m, sign(when_loaded_str, self.remote_ip, self.unique_id)):
         raise forms.ValidationError(_('Invalid security token'))
 
     curdelta = datetime.datetime.now() - when_loaded
