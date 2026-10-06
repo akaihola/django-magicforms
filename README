@@ -1,19 +1,45 @@
-Status: unmaintained since 2008
-===============================
+Update 2026-10-06: This project has been unmaintained since 2008, and
+the repository is now archived. The code is for Python 2 and Django
+1.0, so it won't run on current versions of either. There's no
+setup.py, so pip can't install it either.
 
-This code targets Python 2 and Django 1.0. It is kept for reference
-only; don't use it in new projects. Django's ``django.core.signing``
-module now provides signed, timestamped tokens out of the box.
+If you copied magicforms.py from here before 2026-10-05, or fíam's
+original from his blog, remove it. Those versions decrypted the magic
+field with ARC4 and passed the result to cPickle. The ARC4 token had
+no integrity check, so a visitor could tamper with what got
+unpickled, and that can lead to remote code execution on the server.
+I wrote the fix in the ditch-pycrypto branch on 2008-09-23 but never
+merged it. It's merged now. I also switched the signature to
+HMAC-SHA256 and made sure the check isn't skipped when Python runs
+with -O.
 
-Security note: until 2026-10-05, ``magicforms.py`` on the ``master``
-branch decrypted the hidden ``magic`` form field and passed the
-result to ``cPickle.loads()``. The ARC4 token had no integrity
-check, so a visitor could tamper with what got unpickled, which can
-lead to remote code execution. If you copied that version, or
-fíam's original, into a project, remove it. The current version
-(merged from the ``ditch-pycrypto`` branch, written in September
-2008) never unpickles input; it signs a plain timestamp with a
-salted SHA1 hash instead.
+You don't need this code to get the same protection today.
+
+Django has had signed, timestamped values since version 1.4.
+TimestampSigner in django.core.signing does what the magic field does
+in a few lines, and its max_age argument expires old forms.
+
+The django-contrib-comments app has a honeypot field and a signed
+timestamp built in. For other forms, django-honeypot adds the
+honeypot field.
+
+I wouldn't tie the token to the IP address anymore. Mobile users
+switch between Wi-Fi and cellular networks, and many users share one
+address, so real people would get "Invalid security token" errors.
+Simon warned about this with AOL users in the comments below.
+
+The minimum wait still catches simple bots, and it's easy to add on
+top of TimestampSigner.
+
+None of this stops bots which run a real browser. For those, sites use
+Akismet, which looks at the comment itself, or a challenge like
+Cloudflare Turnstile, hCaptcha or reCAPTCHA. reCAPTCHA v3 gives a
+score between 0.0 and 1.0 and lets you decide where to draw the lines,
+which is close to what fíam wished Akismet did. A language model can
+also read the comment together with the post and say how likely it is
+spam, and why.
+
+-- Antti Kaihola
 
 
 This is a fork of fíam's magicforms.py originally announced on
